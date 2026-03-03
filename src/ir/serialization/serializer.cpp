@@ -90,6 +90,7 @@ class FieldSerializerVisitor {
   result_type VisitLeafField(const ChunkPolicy& field);
   result_type VisitLeafField(const LoopOrigin& field);
   result_type VisitLeafField(const ScopeKind& field);
+  result_type VisitLeafField(const SectionKind& field);
   result_type VisitLeafField(const MemorySpace& field);
   result_type VisitLeafField(const ParamDirection& field);
   result_type VisitLeafField(const std::vector<ParamDirection>& field);
@@ -205,6 +206,7 @@ class IRSerializer::Impl {
     SERIALIZE_FIELDS(ForStmt);
     SERIALIZE_FIELDS(WhileStmt);
     SERIALIZE_FIELDS(ScopeStmt);
+    SERIALIZE_FIELDS(SectionStmt);
     SERIALIZE_FIELDS(SeqStmts);
     SERIALIZE_FIELDS(OpStmts);
     SERIALIZE_FIELDS(EvalStmt);
@@ -544,6 +546,10 @@ msgpack::object FieldSerializerVisitor::VisitLeafField(const LoopOrigin& field) 
 
 msgpack::object FieldSerializerVisitor::VisitLeafField(const ScopeKind& field) {
   return msgpack::object(ScopeKindToString(field), zone_);
+}
+
+msgpack::object FieldSerializerVisitor::VisitLeafField(const SectionKind& field) {
+  return msgpack::object(SectionKindToString(field), zone_);
 }
 
 msgpack::object FieldSerializerVisitor::VisitLeafField(const MemorySpace& field) {

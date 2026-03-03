@@ -41,7 +41,7 @@ from pypto.pypto_core import DataType
 from pypto.pypto_core.ir import ForKind, FunctionType, MemorySpace, MemRef, PipeType, TensorLayout
 
 from . import parser
-from .dsl_api import cond, const, incore, parallel, range, unroll, while_, yield_
+from .dsl_api import cond, const, incore, parallel, range, unroll, section_cube, section_vector, while_, yield_
 from .op import block_ops as block
 from .op import system_ops as system
 from .op import tensor_ops as tensor
@@ -180,6 +180,8 @@ __all__ = [
     "yield_",
     "cond",
     "incore",
+    "section_vector",
+    "section_cube",
     "block",
     "system",
     "tensor",
