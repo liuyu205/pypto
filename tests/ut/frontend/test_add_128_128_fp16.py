@@ -41,13 +41,13 @@ def add_kernel_128(
         vidx = pl.block.get_block_idx()
         vidx_i = pl.block.index_cast(vidx)  # cast i64 to index
         offset = vidx_i * 64
-        plm.load(x, [offset, 0], [64, 128], out=tile_a)
+        plm.load(x, [offset, 0], out=tile_a)
 
-        plm.load(y, [offset, 0], [64, 128], out=tile_b)
+        plm.load(y, [offset, 0], out=tile_b)
 
         plm.add(tile_a, tile_b, out=tile_c)
 
-        plm.store(tile_c, [offset, 0], [64, 128], z)
+        plm.store(tile_c, [offset, 0], z)
     return z
 
 

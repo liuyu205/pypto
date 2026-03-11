@@ -130,20 +130,23 @@ def make_tile(
 def load(
     tensor: Tensor,
     offsets: Sequence[int | Expr],
-    shapes: Sequence[int | Expr],
-    out: Tile
+    out: Tile,
+    shapes: Sequence[int | Expr] | None = None,
 ) -> None:
     """Load data from a global tensor into a pre-allocated tile.
 
     Args:
         tensor: Source global tensor.
         offsets: Per-dimension offsets into the tensor.
-        shapes: Number of elements to load in each dimension.
         out: Pre-allocated destination tile; rebound on return.
+        shapes: Number of elements to load in each dimension. When omitted,
+            no ``pto.set_validshape`` instruction is emitted and the full
+            tile allocation size is used.
     """
+    shapes_tuple = _ir_core.MakeTuple([], _span()) if shapes is None else _to_make_tuple(shapes)
     _op(
         "manual.load",
-        [tensor.unwrap(), _to_make_tuple(offsets), _to_make_tuple(shapes)],
+        [tensor.unwrap(), _to_make_tuple(offsets), shapes_tuple],
         out
     )
 
@@ -183,7 +186,7 @@ def load_tile(
 
     _op(
         "manual.load",
-        [tensor.unwrap(), _to_make_tuple(abs_offsets), _to_make_tuple(shapes)],
+        [tensor.unwrap(), _to_make_tuple(abs_offsets), _ir_core.MakeTuple([], _span())],
         out
     )
 
@@ -191,8 +194,8 @@ def load_tile(
 def store(
     tile: Tile,
     offsets: Sequence[int | Expr],
-    shapes: Sequence[int | Expr],
     output_tensor: Tensor,
+    shapes: Sequence[int | Expr] | None = None,
 ) -> Tensor:
     """Store data from a tile back to a global tensor.
 
@@ -203,13 +206,23 @@ def store(
     Args:
         tile: Source tile.
         offsets: Per-dimension offsets into the output tensor.
-        shapes: Shape of the region to store.
         output_tensor: Destination tensor.
+        shapes: Shape of the region to store. When omitted, no
+            ``pto.set_validshape`` instruction is emitted and the full tile
+            allocation size is used.
 
     Returns:
         Tensor wrapping the store result.
     """
-    return Tensor(expr=_ir_block_ops.store(tile.unwrap(), offsets, shapes, output_tensor.unwrap()))
+    span = _span()
+    offsets_tuple = _to_make_tuple(offsets)
+    shapes_tuple = _ir_core.MakeTuple([], span) if shapes is None else _to_make_tuple(shapes)
+    return Tensor(expr=_ir_core.create_op_call(
+        "manual.store",
+        [tile.unwrap(), offsets_tuple, shapes_tuple, output_tensor.unwrap()],
+        {},
+        span,
+    ))
 
 
 def store_tile(
@@ -241,7 +254,13 @@ def store_tile(
         >>> # absolute_offset = [2*64, 2*128] = [128, 256]
     """
     abs_offsets = [t_off * shape for t_off, shape in zip(tile_offsets, shapes)]
-    return Tensor(expr=_ir_block_ops.store(tile.unwrap(), abs_offsets, shapes, output_tensor.unwrap()))
+    span = _span()
+    return Tensor(expr=_ir_core.create_op_call(
+        "manual.store",
+        [tile.unwrap(), _to_make_tuple(abs_offsets), _ir_core.MakeTuple([], span), output_tensor.unwrap()],
+        {},
+        span,
+    ))
 
 
 def l0c_store(

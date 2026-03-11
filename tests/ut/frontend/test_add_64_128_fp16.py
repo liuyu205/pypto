@@ -38,13 +38,13 @@ def add_kernel(
     tile_c = plm.make_tile([64, 128], dtype=pl.FP16, target_memory=pl.MemorySpace.Vec,
                              addr=0x0000, size=16384)
     with pl.section_vector():
-        plm.load(x, [0, 0], [64, 128], out=tile_a)
+        plm.load(x, [0, 0], out=tile_a)
 
-        plm.load(y, [0, 0], [64, 128], out=tile_b)
+        plm.load(y, [0, 0], out=tile_b)
 
         plm.add(tile_a, tile_b, out=tile_c)
 
-        plm.store(tile_c, [0, 0], [64, 128], z)
+        plm.store(tile_c, [0, 0], z)
     return z
 
 

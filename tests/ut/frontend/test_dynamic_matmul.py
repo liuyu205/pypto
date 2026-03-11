@@ -63,6 +63,7 @@ def dynamic_matmul_kernel(
         blayout=2,
         slayout=1,
         fractal=1024,
+        valid_shape=[-1, -1],
     )
     tile_c = plm.make_tile(tile_type_c, addr=0x4000, size=4096)
     
@@ -74,8 +75,8 @@ def dynamic_matmul_kernel(
         for i in pl.range(0, M_dim, 32):
             for j in pl.range(0, N_dim, 32):
                 for k in pl.range(0, K_dim, 32):
-                    plm.load(a, [i, k], [32, 32], out=tile_a_load)
-                    plm.load(b, [k, j], [32, 32], out=tile_b_load)
+                    plm.load(a, [i, k], out=tile_a_load)
+                    plm.load(b, [k, j], out=tile_b_load)
                     
                     pl.system.sync_src(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.MTE1, event_id=0)
                     pl.system.sync_dst(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.MTE1, event_id=0)
