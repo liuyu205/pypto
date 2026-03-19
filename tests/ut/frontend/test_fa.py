@@ -88,8 +88,11 @@ event_ids_23= (2, 3)
 
 # Cross-core sync event IDs
 QK_READY = 0
+QK_READY_V1 = 16
 P_READY = 1
+P_READY_V1 = 17
 PV_READY = 2
+PV_READY_V1 = 18
 PV_CORE_STRIDE = 2 * TS  # each core needs 2 Q-tile slots in pv_buf (double buffer)
 
 Sq2 = pl.DynVar('Sq')
@@ -182,6 +185,7 @@ def compute_qk(ctx):
     ctx.l0ab_idx = 1 - ctx.l0ab_idx
     ctx.l0c_idx = 1 - ctx.l0c_idx
     pl.system.set_cross_core(pipe=pl.PipeType.FIX, event_id=QK_READY)
+    pl.system.set_cross_core(pipe=pl.PipeType.FIX, event_id=QK_READY_V1)
     return
 
 
@@ -190,7 +194,8 @@ def compute_pv(ctx):
     sv_off = ctx.skvi * TKV
     pl.system.sync_dst(set_pipe=pl.PipeType.MTE1, wait_pipe=pl.PipeType.MTE2, event_id=event_ids_23[ctx.buf_idx])
     plm.load(v_mat_buf[ctx.buf_idx], v, [sv_off, 0])
-    pl.system.wait_cross_core(pipe=pl.PipeType.M, event_id=P_READY)
+    pl.system.wait_cross_core(pipe=pl.PipeType.MTE2, event_id=P_READY)
+    pl.system.wait_cross_core(pipe=pl.PipeType.MTE2, event_id=P_READY_V1)
     plm.load(p_mat_buf[ctx.buf_idx], p_buf, [ctx.sq_off, sv_off])
     pl.system.sync_src(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.MTE1, event_id=0)
     pl.system.sync_dst(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.MTE1, event_id=0)
@@ -213,6 +218,7 @@ def compute_pv(ctx):
     ctx.l0ab_idx = 1 - ctx.l0ab_idx
     ctx.l0c_idx = 1 - ctx.l0c_idx
     pl.system.set_cross_core(pipe=pl.PipeType.FIX, event_id=PV_READY)
+    pl.system.set_cross_core(pipe=pl.PipeType.FIX, event_id=PV_READY_V1)
     return
 
 
@@ -302,7 +308,7 @@ def fa_k_kernel(
             sq_off = qi * TS
             q_mat_idx = q_count % 2
             # ---- First KV (ki=0): FlashSoftmax INIT ----
-            pl.system.wait_cross_core(pipe=pl.PipeType.V, event_id=QK_READY)
+            pl.system.wait_cross_core(pipe=pl.PipeType.MTE2, event_id=QK_READY)
             plm.load(qk_vec, qk_buf, [sq_off + row_off, 0])
             pl.system.sync_src(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
             pl.system.sync_dst(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
@@ -322,7 +328,7 @@ def fa_k_kernel(
             plm.store(p_buf, p_f16, [sq_off + row_off, 0])
             pl.system.set_cross_core(pipe=pl.PipeType.MTE3, event_id=P_READY)
 
-            pl.system.wait_cross_core(pipe=pl.PipeType.V, event_id=PV_READY)
+            pl.system.wait_cross_core(pipe=pl.PipeType.MTE2, event_id=PV_READY)
             plm.load(running_o, pv_buf, [core_id * PV_CORE_STRIDE + q_mat_idx * TS + row_off, 0])
             pl.system.sync_src(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
             pl.system.sync_dst(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
@@ -330,7 +336,7 @@ def fa_k_kernel(
             # ---- Remaining KV (ki=1..skv_tiles-1): FlashSoftmax UPDATE ----
             for ki in pl.range(1, skv_tiles):
                 skv_off = ki * TKV
-                pl.system.wait_cross_core(pipe=pl.PipeType.V, event_id=QK_READY)
+                pl.system.wait_cross_core(pipe=pl.PipeType.MTE2, event_id=QK_READY)
                 plm.load(qk_vec, qk_buf, [sq_off + row_off, skv_off])
                 pl.system.sync_src(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
                 pl.system.sync_dst(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
@@ -363,7 +369,7 @@ def fa_k_kernel(
                 plm.store(p_buf, p_f16, [sq_off + row_off, skv_off])
                 pl.system.set_cross_core(pipe=pl.PipeType.MTE3, event_id=P_READY)
 
-                pl.system.wait_cross_core(pipe=pl.PipeType.V, event_id=PV_READY)
+                pl.system.wait_cross_core(pipe=pl.PipeType.MTE2, event_id=PV_READY)
                 plm.load(pv_vec, pv_buf, [core_id * PV_CORE_STRIDE + q_mat_idx * TS + row_off, 0])
                 pl.system.sync_src(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
                 pl.system.sync_dst(set_pipe=pl.PipeType.MTE2, wait_pipe=pl.PipeType.V, event_id=0)
@@ -392,9 +398,9 @@ def flash_attention_ref(q, k, v, d):
 
 
 def test_fa_k():
-    compiled = fe.compile(fa_k_kernel, arch="a3", codegen_mode="cce")
+    compiled = fe.compile(fa_k_kernel, arch="a5")
     print("compiled:", compiled.lib_path)
-    device = "npu:5"
+    device = "npu:0"
     torch.npu.set_device(device)
     torch.manual_seed(42)
     # Test shapes: (Sq, Skv, D) — multi-core with Q tiling
