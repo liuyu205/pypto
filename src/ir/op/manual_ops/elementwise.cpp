@@ -129,8 +129,54 @@ REGISTER_MANUAL_BINARY_TILE(and);
 REGISTER_MANUAL_BINARY_TILE(or);
 REGISTER_MANUAL_BINARY_TILE(shl);
 REGISTER_MANUAL_BINARY_TILE(shr);
+REGISTER_MANUAL_BINARY_TILE(add_relu);
+REGISTER_MANUAL_BINARY_TILE(sub_relu);
+REGISTER_MANUAL_BINARY_TILE(mul_add_dst);
+REGISTER_MANUAL_BINARY_TILE(fused_mul_add);
 
 #undef REGISTER_MANUAL_BINARY_TILE
+
+// manual.add_relu_cast: (lhs_tile, rhs_tile, out) -> out's type; carries target_type and mode attrs.
+REGISTER_OP("manual.add_relu_cast")
+    .set_op_category("ManualOp")
+    .set_description("Manual add-relu-cast: out = cast(max(0, lhs + rhs), target_dtype, rounding_mode)")
+    .add_argument("lhs", "Left tile (TileType)")
+    .add_argument("rhs", "Right tile (TileType)")
+    .add_argument("out", "Pre-allocated output tile with target dtype (TileType)")
+    .set_attr<DataType>("target_type")
+    .set_attr<std::string>("mode")
+    .f_deduce_type([](const std::vector<ExprPtr>& args,
+                      const std::vector<std::pair<std::string, std::any>>& kwargs) {
+      return DeduceManualBinaryTile(args, kwargs, "manual.add_relu_cast");
+    });
+
+// manual.sub_relu_cast: (lhs_tile, rhs_tile, out) -> out's type; carries target_type and mode attrs.
+REGISTER_OP("manual.sub_relu_cast")
+    .set_op_category("ManualOp")
+    .set_description("Manual sub-relu-cast: out = cast(max(0, lhs - rhs), target_dtype, rounding_mode)")
+    .add_argument("lhs", "Left tile (TileType)")
+    .add_argument("rhs", "Right tile (TileType)")
+    .add_argument("out", "Pre-allocated output tile with target dtype (TileType)")
+    .set_attr<DataType>("target_type")
+    .set_attr<std::string>("mode")
+    .f_deduce_type([](const std::vector<ExprPtr>& args,
+                      const std::vector<std::pair<std::string, std::any>>& kwargs) {
+      return DeduceManualBinaryTile(args, kwargs, "manual.sub_relu_cast");
+    });
+
+// manual.mul_cast: (lhs_tile, rhs_tile, out) -> out's type; carries target_type and mode attrs.
+REGISTER_OP("manual.mul_cast")
+    .set_op_category("ManualOp")
+    .set_description("Manual mul-cast: out = cast(lhs * rhs, target_dtype_dtype, rounding_mode)")
+    .add_argument("lhs", "Left tile (TileType)")
+    .add_argument("rhs", "Right tile (TileType)")
+    .add_argument("out", "Pre-allocated output tile with target dtype (TileType)")
+    .set_attr<DataType>("target_type")
+    .set_attr<std::string>("mode")
+    .f_deduce_type([](const std::vector<ExprPtr>& args,
+                      const std::vector<std::pair<std::string, std::any>>& kwargs) {
+      return DeduceManualBinaryTile(args, kwargs, "manual.mul_cast");
+    });
 
 // ---------------------------------------------------------------------------
 // Tile x Scalar binary operations

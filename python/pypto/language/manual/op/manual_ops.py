@@ -380,6 +380,88 @@ def shr(lhs: Tile, rhs: Tile, out: Tile) -> None:
     """Element-wise right shift: out = lhs >> rhs (integer tiles)."""
     _op("manual.shr", [lhs.unwrap(), rhs.unwrap()], out)
 
+def add_relu(lhs: Tile, rhs: Tile, out: Tile) -> None:
+    """Element-wise addition RELU: out = max(0, (lhs + rhs))."""
+    _op("manual.add_relu", [lhs.unwrap(), rhs.unwrap()], out)
+
+def sub_relu(lhs: Tile, rhs: Tile, out: Tile) -> None:
+    """Element-wise subtraction RELU: out = max(0, (lhs - rhs))."""
+    _op("manual.sub_relu", [lhs.unwrap(), rhs.unwrap()], out)
+
+def add_relu_cast(
+    lhs: Tile,
+    rhs: Tile,
+    out: Tile,
+    target_type: int | DataType,
+    mode: Literal["none", "rint", "round", "floor", "ceil", "trunc", "odd"] = "round",
+) -> None:
+    """Element-wise addition RELU with cast: out = cast(max(0, (lhs + rhs)), target_type, mode).
+
+    Args:
+        lhs: Left tile.
+        rhs: Right tile.
+        out: Pre-allocated output tile with desired result dtype.
+        target_type: Target DataType.
+        mode: Rounding mode string.
+    """
+    _op("manual.add_relu_cast", [lhs.unwrap(), rhs.unwrap()], out, target_type=target_type, mode=mode)
+
+def sub_relu_cast(
+    lhs: Tile,
+    rhs: Tile,
+    out: Tile,
+    target_type: int | DataType,
+    mode: Literal["none", "rint", "round", "floor", "ceil", "trunc", "odd"] = "round",
+) -> None:
+    """Element-wise subtraction RELU with cast: out = cast(max(0, (lhs - rhs)), target_type, mode).
+
+    Args:
+        lhs: Left tile.
+        rhs: Right tile.
+        out: Pre-allocated output tile with desired result dtype.
+        target_type: Target DataType.
+        mode: Rounding mode string.
+    """
+    _op("manual.sub_relu_cast", [lhs.unwrap(), rhs.unwrap()], out, target_type=target_type, mode=mode)
+
+def mul_cast(
+    lhs: Tile,
+    rhs: Tile,
+    out: Tile,
+    target_type: int | DataType,
+    mode: Literal["none", "rint", "round", "floor", "ceil", "trunc", "odd"] = "round",
+) -> None:
+    """Element-wise multiplication with cast: out = cast(lhs * rhs, target_type, mode).
+
+    Args:
+        lhs: Left tile.
+        rhs: Right tile.
+        out: Pre-allocated output tile with desired result dtype.
+        target_type: Target DataType.
+        mode: Rounding mode string.
+    """
+    _op("manual.mul_cast", [lhs.unwrap(), rhs.unwrap()], out, target_type=target_type, mode=mode)
+
+def mul_add_dst(lhs: Tile, rhs: Tile, out: Tile) -> None:
+    """Element-wise multiplication with destination accumulation: out = (lhs * rhs) + out.
+
+    Args:
+        lhs: Left tile.
+        rhs: Right tile.
+        out: Pre-allocated output tile; used as both accumulator and destination.
+    """
+    _op("manual.mul_add_dst", [lhs.unwrap(), rhs.unwrap()], out)
+
+def fused_mul_add(lhs: Tile, rhs: Tile, out: Tile) -> None:
+    """Element-wise fused multiply-add: out = (lhs * out) + rhs.
+
+    Args:
+        lhs: Left tile (multiplied with).
+        rhs: Right tile (added to product).
+        out: Pre-allocated output tile; used as both multiplier and destination.
+    """
+    _op("manual.fused_mul_add", [lhs.unwrap(), rhs.unwrap()], out)
+
 
 # ---------------------------------------------------------------------------
 # Element-wise Tile x Scalar binary operations
@@ -735,7 +817,8 @@ __all__ = [
     "get_block_num", "get_subblock_idx",
     # Tile x Tile binary
     "add", "sub", "mul", "div", "rem", "maximum", "minimum",
-    "and_", "or_", "shl", "shr",
+    "and_", "or_", "shl", "shr", "add_relu", "sub_relu", "add_relu_cast", "sub_relu_cast", "mul_cast",
+    "mul_add_dst", "fused_mul_add",
     # Tile x Scalar binary
     "adds", "subs", "muls", "divs", "rems",
     "ands", "ors", "shls", "shrs",
