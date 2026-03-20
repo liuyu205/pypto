@@ -1155,17 +1155,23 @@ void PTOCodegen::VisitStmt_(const IfStmtPtr& op) {
 
   if (op->return_vars_.empty()) {
     // Simple scf.if (no return values)
+    auto if_entry_var_to_mlir = var_to_mlir_;
     Emit("scf.if " + condition + " {");
     indent_level_++;
+    var_to_mlir_ = if_entry_var_to_mlir;
     VisitStmt(op->then_body_);
+    var_to_mlir_ = if_entry_var_to_mlir;
     indent_level_--;
 
     if (op->else_body_.has_value()) {
       Emit("} else {");
       indent_level_++;
+      var_to_mlir_ = if_entry_var_to_mlir;
       VisitStmt(*op->else_body_);
+      var_to_mlir_ = if_entry_var_to_mlir;
       indent_level_--;
     }
+    var_to_mlir_ = if_entry_var_to_mlir;
     Emit("}");
   } else {
     // scf.if with return values
@@ -1200,6 +1206,7 @@ void PTOCodegen::VisitStmt_(const IfStmtPtr& op) {
                                           [](bool b) { return b; });
 
     CHECK(op->else_body_.has_value()) << "IfStmt with return_vars requires else_body";
+    auto if_entry_var_to_mlir = var_to_mlir_;
 
     // Emit: %ret0, %ret1 = scf.if %cond -> (type0, type1) {
     std::ostringstream oss;
@@ -1221,7 +1228,9 @@ void PTOCodegen::VisitStmt_(const IfStmtPtr& op) {
 
     // Then branch
     yield_buffer_.clear();
+    var_to_mlir_ = if_entry_var_to_mlir;
     VisitStmt(op->then_body_);
+    var_to_mlir_ = if_entry_var_to_mlir;
     if (!yield_buffer_.empty()) {
       std::ostringstream yield_oss;
       yield_oss << "scf.yield ";
@@ -1246,7 +1255,9 @@ void PTOCodegen::VisitStmt_(const IfStmtPtr& op) {
     if (op->else_body_.has_value()) {
       Emit("} else {");
       indent_level_++;
+      var_to_mlir_ = if_entry_var_to_mlir;
       VisitStmt(*op->else_body_);
+      var_to_mlir_ = if_entry_var_to_mlir;
       if (!yield_buffer_.empty()) {
         std::ostringstream yield_oss;
         yield_oss << "scf.yield ";
@@ -1267,6 +1278,7 @@ void PTOCodegen::VisitStmt_(const IfStmtPtr& op) {
       yield_buffer_.clear();
       indent_level_--;
     }
+    var_to_mlir_ = if_entry_var_to_mlir;
     Emit("}");
 
     // Exit indirect-select mode

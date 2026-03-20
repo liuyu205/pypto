@@ -61,8 +61,8 @@ static const std::vector<std::string> kManualRoundModes = {"NONE", "RINT",  "ROU
 //
 // n_ins:    number of leading input arguments
 // out_idx:  index of the explicit output tile argument (== n_ins)
-// config_attr: optional attribute string inserted between ins type list
-//              and the closing ')' e.g. "{cmpMode = #pto<cmp EQ>}"
+// config_attr: optional attribute string inserted after the ins operand list
+//              and before the type annotation, e.g. "{cmpMode = #pto<cmp EQ>}"
 // ============================================================================
 
 static std::string GenerateManualInsOutsClause(const CallPtr& op, codegen::PTOCodegen& codegen,
@@ -89,8 +89,8 @@ static std::string GenerateManualInsOutsClause(const CallPtr& op, codegen::PTOCo
       type_annot += annot;
     }
   }
-  if (!type_annot.empty()) oss << " : " << type_annot;
   if (!config_attr.empty()) oss << config_attr;
+  if (!type_annot.empty()) oss << " : " << type_annot;
 
   // --- outs clause (explicit last arg) ---
   const size_t out_idx = n_ins;
@@ -832,20 +832,38 @@ REGISTER_BACKEND_OP(Backend910B_PTO, "manual.gemv_bias")
 REGISTER_BACKEND_OP(Backend910B_PTO, "manual.reshape")
     .set_pipe(ir::PipeType::V)
     .f_codegen([](const ir::CallPtr& op, codegen::CodegenBase& codegen) {
-      // (src, shape_tuple, out): emit reshape with explicit out as outs target.
+      // After parser rewriting for manual ops, manual.reshape reaches backend as:
+      //   (src, shape_tuple, out)
+      // Emit result-style reshape:
+      //   %new = pto.treshape %src : src_type -> dst_type
+      // and rebind the explicit output tile variable to %new.
       auto& c = dynamic_cast<codegen::PTOCodegen&>(codegen);
       CHECK(op->args_.size() == 3) << "manual.reshape: expected 3 args (src, shape, out)";
-      std::string src      = c.GetExprAsCode(op->args_[0]);
+
+      auto out_var = As<Var>(op->args_[2]);
+      CHECK(out_var) << "manual.reshape: out must be a Var";
+
+      std::string src = c.GetExprAsCode(op->args_[0]);
       std::string src_type = c.GetExprTypeAnnotation(op->args_[0]);
-      std::string out      = c.GetExprAsCode(op->args_[2]);
-      std::string out_type = c.GetExprTypeAnnotation(op->args_[2]);
+
+      auto out_tile_type = As<ir::TileType>(out_var->GetType());
+      CHECK(out_tile_type) << "manual.reshape: out must have TileType";
+
+      std::string out_type = c.GetTileBufTypeStringFromTileType(out_tile_type);
+      std::string result = c.NewTemp();
+
       std::ostringstream oss;
-      oss << "pto.treshape ins(" << src;
-      if (!src_type.empty()) oss << " : " << src_type;
-      oss << ") outs(" << out;
-      if (!out_type.empty()) oss << " : " << out_type;
-      oss << ")";
+      oss << result << " = pto.treshape " << src;
+      if (!src_type.empty()) {
+        oss << " : " << src_type;
+      }
+      if (!out_type.empty()) {
+        oss << " -> " << out_type;
+      }
       c.Emit(oss.str());
+
+      c.SetVarMlirName(out_var->name_, result);
+      c.SetCurrentResultBuf(result);
       return "";
     });
 

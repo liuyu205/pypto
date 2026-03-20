@@ -69,10 +69,9 @@ class AssignmentCollector : public IRVisitor {
   }
 
   void VisitStmt_(const ForStmtPtr& op) override {
-    // Don't recurse into nested for loops - they handle their own iter_args
-    // But we do need to record the loop variable
-    assigned_vars.insert(GetBaseName(op->loop_var_->name_));
-    // Visit the body to collect assignments
+    // The loop variable is scoped to the loop body and must not be treated as an
+    // outer variable assignment candidate for loop-carried analysis. Recurse into
+    // the body so we still collect writes to real outer-scope variables.
     VisitStmt(op->body_);
   }
 
@@ -637,6 +636,7 @@ class SSAConverter : public IRMutator {
    */
   void ExitScope() {
     if (!scope_stack_.empty()) {
+      current_version_ = scope_stack_.back();
       scope_stack_.pop_back();
     }
   }

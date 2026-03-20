@@ -453,18 +453,17 @@ def compile(prog, clean_up=False, timeout=20, arch: str = "dav-c220"):
     if not ASCEND_HOME_PATH:
         raise RuntimeError("ASCEND_HOME_PATH is not set")
     LD_LIB_PATH = ASCEND_HOME_PATH + "/lib64/"
-    
-    flags = [
-        "-fPIC",
-        "-shared",
-        "-xcce",
-        f"--cce-aicore-arch={arch}",
-        "-DMEMORY_BASE",
-        "-O2",
-        "-std=c++17",
-        f"-I{PTO_LIB_PATH}/include",
+
+    runtime_includes = [
+        f"-I{ASCEND_HOME_PATH}/include",
+        f"-I{ASCEND_HOME_PATH}/pkg_inc/runtime",
+        f"-I{ASCEND_HOME_PATH}/include/experiment/runtime",
+        f"-I{ASCEND_HOME_PATH}/include/experiment/msprof",
     ]
     
+    arch = _normalize_arch(arch)
+    flags = _build_bisheng_flags(PTO_LIB_PATH, arch)
+    flags.extend(runtime_includes)
     result = subprocess.run(
         ["bisheng", *flags, final_kernel, "-L", LD_LIB_PATH, "-lruntime", "-o", lib_path],
         check=False, timeout=timeout, capture_output=True
