@@ -27,7 +27,7 @@ from pypto import DataType, backend, codegen, ir
 from pypto.backend import BackendType
 from pypto.ir import OptimizationStrategy, PassManager
 from pypto.ir.builder import IRBuilder
-from pypto.ir.op import block, tensor as tensor_op
+from pypto.ir.op import block, debug as debug_op, tensor as tensor_op
 from pypto.ir.pto_codegen import (
     _generate_arg_unpacking,
     _generate_kernel_wrapper,
@@ -261,6 +261,16 @@ def test_block_print_ir_returns_unknown_type():
     assert isinstance(call.type, ir.UnknownType)
 
 
+def test_debug_printf_ir_returns_unknown_type():
+    """debug.printf IR helper should return UnknownType."""
+    span = ir.Span.unknown()
+    scalar_var = ir.Var("value", ir.ScalarType(DataType.INT32), span)
+
+    call = debug_op.printf_("value=%d", scalar_var)
+
+    assert isinstance(call.type, ir.UnknownType)
+
+
 def test_pto_codegen_alloc_tile():
     """Test that tile buffers generate alloc_tile operations."""
     backend.reset_for_testing()
@@ -286,6 +296,38 @@ def test_pto_codegen_alloc_tile():
     assert "loc=vec" in mlir_code  # Vector buffer (PTO address space)
     assert "dtype=f32" in mlir_code
     assert "rows=32, cols=32" in mlir_code
+
+
+def test_pto_codegen_printf_lowering():
+    """plm.printf should lower to one pto.print per scalar argument."""
+    backend.reset_for_testing()
+    backend.set_backend_type(BackendType.PTO)
+
+    @pl.program
+    class PrintfProgram:
+        @pl.function
+        def printf_test(
+            self,
+            input: pl.Tensor[[16, 16], pl.INT32],
+            output: pl.Tensor[[16, 16], pl.INT32],
+        ):
+            x: pl.Scalar[pl.INT32] = 12
+            y: pl.Scalar[pl.INT32] = 255
+            z: pl.Scalar[pl.FP32] = 3.5
+            plm.printf("x=%d y=%x z=%f\n", x, y, z)
+            tile = pl.load(input, offsets=[0, 0], shapes=[16, 16])
+            pl.store(tile, offsets=[0, 0], shapes=[16, 16], output_tensor=output)
+
+    pm = PassManager.get_strategy(OptimizationStrategy.PTOAS)
+    transformed_program = pm.run_passes(PrintfProgram)
+
+    codegen_obj = PTOCodegen()
+    mlir_code = _get_mlir_code(codegen_obj.generate(transformed_program))
+
+    assert mlir_code.count("pto.print") == 3
+    assert 'pto.print ins("x=%d", ' in mlir_code
+    assert 'pto.print ins(" y=%x", ' in mlir_code
+    assert 'pto.print ins(" z=%f\\n", ' in mlir_code
 
 
 def test_pto_codegen_block_load_lowering():

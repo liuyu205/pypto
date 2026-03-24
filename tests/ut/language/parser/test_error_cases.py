@@ -187,6 +187,46 @@ class TestErrorCases:
                 plm.dump_tile(x)  # type: ignore[arg-type]
                 return x
 
+    def test_printf_requires_string_literal_format(self):
+        """printf should reject non-string-literal format arguments."""
+
+        with pytest.raises(ParserTypeError, match="string literal"):
+
+            @pl.function(type=pl.FunctionType.Orchestration)
+            def nonliteral_printf(x: pl.Scalar[pl.INT32]) -> pl.Scalar[pl.INT32]:
+                plm.printf(123, x)  # type: ignore[arg-type]
+                return x
+
+    def test_printf_rejects_mismatched_argument_count(self):
+        """printf should reject placeholder/argument count mismatch."""
+
+        with pytest.raises(ParserSyntaxError, match="expects 2 scalar arguments"):
+
+            @pl.function(type=pl.FunctionType.Orchestration)
+            def too_few_printf_args(x: pl.Scalar[pl.INT32]) -> pl.Scalar[pl.INT32]:
+                plm.printf("a=%d b=%d", x)
+                return x
+
+    def test_printf_rejects_non_scalar_argument(self):
+        """printf should only accept scalar arguments."""
+
+        with pytest.raises(ParserSyntaxError, match="requires ScalarType input"):
+
+            @pl.function
+            def tensor_printf(x: pl.Tensor[[16, 16], pl.INT32]) -> pl.Tensor[[16, 16], pl.INT32]:
+                plm.printf("x=%d", x)  # type: ignore[arg-type]
+                return x
+
+    def test_printf_rejects_unsupported_format(self):
+        """printf should reject unsupported format conversions."""
+
+        with pytest.raises(ParserSyntaxError, match="does not support conversion '%s'"):
+
+            @pl.function(type=pl.FunctionType.Orchestration)
+            def unsupported_printf(x: pl.Scalar[pl.INT32]) -> pl.Scalar[pl.INT32]:
+                plm.printf("x=%s", x)
+                return x
+
 
 class TestSSAValidation:
     """Tests for SSA validation."""

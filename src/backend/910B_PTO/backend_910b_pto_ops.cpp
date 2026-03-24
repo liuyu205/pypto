@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cctype>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -236,6 +237,120 @@ static std::string MakePrintCodegenPTO(const std::string& pto_op_name, const Cal
     codegen.Emit(pto_op_name + " ins(" + src + " : " + src_type + ")");
   } else {
     codegen.Emit(pto_op_name + " ins(" + src + ")");
+  }
+  return "";
+}
+
+struct PrintfSegment {
+  std::string format_segment;
+  char conversion;
+};
+
+static bool IsSupportedPrintfConversion(char conversion) {
+  return conversion == 'd' || conversion == 'u' || conversion == 'x' || conversion == 'f';
+}
+
+static std::string EscapeMlirStringLiteral(const std::string& text) {
+  std::ostringstream oss;
+  oss << "\"";
+  for (char c : text) {
+    switch (c) {
+      case '\\':
+        oss << "\\\\";
+        break;
+      case '"':
+        oss << "\\\"";
+        break;
+      case '\n':
+        oss << "\\n";
+        break;
+      case '\t':
+        oss << "\\t";
+        break;
+      case '\r':
+        oss << "\\r";
+        break;
+      default:
+        oss << c;
+        break;
+    }
+  }
+  oss << "\"";
+  return oss.str();
+}
+
+static std::vector<PrintfSegment> ParsePrintfSegments(const std::string& format) {
+  std::vector<PrintfSegment> segments;
+  std::string pending_text;
+  size_t i = 0;
+  while (i < format.size()) {
+    if (format[i] != '%') {
+      pending_text.push_back(format[i]);
+      ++i;
+      continue;
+    }
+    if (i + 1 < format.size() && format[i + 1] == '%') {
+      pending_text += "%%";
+      i += 2;
+      continue;
+    }
+
+    size_t j = i + 1;
+    while (j < format.size()) {
+      char c = format[j];
+      if (c == '-' || c == '+' || c == ' ' || c == '#' || c == '0') {
+        ++j;
+      } else {
+        break;
+      }
+    }
+    while (j < format.size() && std::isdigit(static_cast<unsigned char>(format[j]))) {
+      ++j;
+    }
+    if (j < format.size() && format[j] == '.') {
+      ++j;
+      CHECK(j < format.size() && std::isdigit(static_cast<unsigned char>(format[j])))
+          << "debug.printf precision must be followed by digits";
+      while (j < format.size() && std::isdigit(static_cast<unsigned char>(format[j]))) {
+        ++j;
+      }
+    }
+
+    CHECK(j < format.size()) << "debug.printf format ends with an incomplete conversion";
+    char conversion = format[j];
+    CHECK(IsSupportedPrintfConversion(conversion))
+        << "debug.printf does not support conversion '%" << conversion << "'";
+
+    segments.push_back({pending_text + format.substr(i, j - i + 1), conversion});
+    pending_text.clear();
+    i = j + 1;
+  }
+
+  CHECK(!segments.empty()) << "debug.printf format must contain at least one supported conversion";
+  if (!pending_text.empty()) {
+    segments.back().format_segment += pending_text;
+  }
+  return segments;
+}
+
+static std::string MakeDebugPrintfCodegenPTO(const CallPtr& op, codegen::CodegenBase& codegen_base) {
+  auto& codegen = dynamic_cast<codegen::PTOCodegen&>(codegen_base);
+  CHECK(!op->args_.empty()) << "debug.printf requires at least one scalar argument";
+
+  std::string format = op->GetKwarg<std::string>("format");
+  auto segments = ParsePrintfSegments(format);
+  CHECK(segments.size() == op->args_.size()) << "debug.printf lowered segment count (" << segments.size()
+                                             << ") must match scalar arg count (" << op->args_.size() << ")";
+
+  for (size_t i = 0; i < segments.size(); ++i) {
+    std::string scalar = codegen.GetExprAsCode(op->args_[i]);
+    std::string scalar_type = codegen.GetExprTypeAnnotation(op->args_[i]);
+    INTERNAL_CHECK(!scalar_type.empty()) << "debug.printf scalar argument " << i << " is missing type annotation";
+
+    std::ostringstream oss;
+    oss << "pto.print ins(" << EscapeMlirStringLiteral(segments[i].format_segment) << ", " << scalar << " : "
+        << scalar_type << ")";
+    codegen.Emit(oss.str());
   }
   return "";
 }
@@ -667,6 +782,12 @@ REGISTER_BACKEND_OP(Backend910B_PTO, "tensor.print")
     .set_pipe(ir::PipeType::V)
     .f_codegen([](const ir::CallPtr& op, codegen::CodegenBase& codegen) {
       return MakeTensorPrintCodegenPTO(op, codegen);
+    });
+
+REGISTER_BACKEND_OP(Backend910B_PTO, "debug.printf")
+    .set_pipe(ir::PipeType::S)
+    .f_codegen([](const ir::CallPtr& op, codegen::CodegenBase& codegen) {
+      return MakeDebugPrintfCodegenPTO(op, codegen);
     });
 
 REGISTER_BACKEND_OP(Backend910B_PTO, "block.reshape")

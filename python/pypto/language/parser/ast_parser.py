@@ -2315,6 +2315,39 @@ class ASTParser:
             hint=f"Check if '{op_name}' is a valid system operation",
         )
 
+    def _parse_debug_op(self, op_name: str, call: ast.Call) -> ir.Expr:
+        """Parse debug operation."""
+        call_span = self.span_tracker.get_span(call)
+
+        if op_name == "printf":
+            if call.keywords:
+                raise ParserSyntaxError(
+                    "printf does not accept keyword arguments",
+                    span=call_span,
+                )
+            if len(call.args) < 2:
+                raise ParserSyntaxError(
+                    f"printf requires a format string and at least one scalar argument, got {len(call.args)} arguments",
+                    span=call_span,
+                )
+
+            format_node = call.args[0]
+            if not isinstance(format_node, ast.Constant) or not isinstance(format_node.value, str):
+                raise ParserTypeError(
+                    "printf format must be a string literal",
+                    span=self.span_tracker.get_span(format_node),
+                    hint='Use a literal like plm.printf("x=%d\\n", value)',
+                )
+
+            args = [self.parse_expression(arg) for arg in call.args[1:]]
+            return ir_op.debug.printf_(format_node.value, *args, span=call_span)
+
+        raise InvalidOperationError(
+            f"Unknown debug operation: {op_name}",
+            span=call_span,
+            hint=f"Check if '{op_name}' is a valid debug operation",
+        )
+
     def _parse_ptr_op(self, op_name: str, call: ast.Call) -> ir.Expr:
         """Parse pointer operation (ptoas scene: make_tensor, addptr).
 
@@ -2350,6 +2383,10 @@ class ASTParser:
         "dump_tensor",
     })
 
+    _MANUAL_AS_DEBUG_OPS: frozenset[str] = frozenset({
+        "printf",
+    })
+
     def _parse_manual_op(self, op_name: str, call: ast.Call) -> ir.Expr:
         """Parse a manual (non-SSA) operation call: plm.{op_name}(..., dst=tile).
 
@@ -2372,6 +2409,8 @@ class ASTParser:
             return self._parse_block_op(op_name, call)
         if op_name in self._MANUAL_AS_TENSOR_OPS:
             return self._parse_tensor_op(op_name, call)
+        if op_name in self._MANUAL_AS_DEBUG_OPS:
+            return self._parse_debug_op(op_name, call)
 
         args = [self.parse_expression(arg) for arg in call.args]
         kwargs = self._parse_op_kwargs(call)
