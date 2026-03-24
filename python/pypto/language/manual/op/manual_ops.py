@@ -81,11 +81,14 @@ class TileType:
 # Hardware-required layouts per memory space for Cube matmul.
 # {MemorySpace: (blayout, slayout)}
 _REQUIRED_LAYOUTS: dict[MemorySpace, tuple[int, int]] = {
-    MemorySpace.Mat:   (2, 1),  # NZ format: col_major block, row_major scatter
+    MemorySpace.Mat:   (2, 1),  # NZ format: col_major block, row_major scatter (default)
     MemorySpace.Left:  (1, 1),  # row_major block, row_major scatter
     MemorySpace.Right: (1, 2),  # row_major block, col_major scatter
     MemorySpace.Acc:   (2, 1),  # NZ format: col_major block, row_major scatter
 }
+
+# MAT also supports DN layout (row_major block, col_major scatter) for DN TLOAD.
+_MAT_DN_LAYOUT: tuple[int, int] = (1, 2)
 
 _LAYOUT_NAMES = {0: "none_box", 1: "row_major", 2: "col_major"}
 
@@ -106,16 +109,25 @@ def _apply_default_layout(tt: "TileType") -> None:
         tt.slayout = req_s
 
     # Validate against hardware requirements
-    if tt.blayout != req_b:
-        raise ValueError(
-            f"{space_name} tiles require blayout={req_b} ({_LAYOUT_NAMES[req_b]}), "
-            f"got blayout={tt.blayout} ({_LAYOUT_NAMES.get(tt.blayout, '?')})"
-        )
-    if tt.slayout != req_s:
-        raise ValueError(
-            f"{space_name} tiles require slayout={req_s} ({_LAYOUT_NAMES[req_s]}), "
-            f"got slayout={tt.slayout} ({_LAYOUT_NAMES.get(tt.slayout, '?')})"
-        )
+    actual = (tt.blayout, tt.slayout)
+    if tt.target_memory == MemorySpace.Mat:
+        # MAT supports both ND (2,1) and DN (1,2) layouts
+        if actual != required and actual != _MAT_DN_LAYOUT:
+            raise ValueError(
+                f"{space_name} tiles require blayout/slayout={required} (ND) or "
+                f"{_MAT_DN_LAYOUT} (DN), got ({tt.blayout}, {tt.slayout})"
+            )
+    else:
+        if tt.blayout != req_b:
+            raise ValueError(
+                f"{space_name} tiles require blayout={req_b} ({_LAYOUT_NAMES[req_b]}), "
+                f"got blayout={tt.blayout} ({_LAYOUT_NAMES.get(tt.blayout, '?')})"
+            )
+        if tt.slayout != req_s:
+            raise ValueError(
+                f"{space_name} tiles require slayout={req_s} ({_LAYOUT_NAMES[req_s]}), "
+                f"got slayout={tt.slayout} ({_LAYOUT_NAMES.get(tt.slayout, '?')})"
+            )
 
     # Auto-fill fractal for FP32 ACC
     if tt.target_memory == MemorySpace.Acc and tt.fractal is None:
@@ -183,6 +195,7 @@ def load(
     tensor: Tensor,
     offsets: Sequence[int | Expr],
     shapes: Sequence[int | Expr] | None = None,
+    layout: str | None = None,
 ) -> None:
     """Load data from a global tensor into a pre-allocated tile.
 
@@ -193,12 +206,18 @@ def load(
         shapes: Number of elements to load in each dimension. When omitted,
             no ``pto.set_validshape`` instruction is emitted and the full
             tile allocation size is used.
+        layout: Tensor memory layout. ``"dn"`` for column-major (DN) layout,
+            which lets TLOAD transpose on-chip. Default is row-major (ND).
     """
     shapes_tuple = _ir_core.MakeTuple([], _span()) if shapes is None else _to_make_tuple(shapes)
+    kwargs: dict = {}
+    if layout is not None:
+        kwargs["layout"] = layout
     _op(
         "manual.load",
         [tensor.unwrap(), _to_make_tuple(offsets), shapes_tuple],
         out,
+        **kwargs,
     )
 
 

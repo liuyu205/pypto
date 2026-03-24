@@ -310,6 +310,7 @@ void PTOCodegen::GenerateFunction(const FunctionPtr& func) {
     if (auto tensor_type = As<TensorType>(var->GetType())) {
       std::string tensor_view = NewTemp();
       tensor_to_view_[var->name_] = tensor_view;
+      tensor_to_ptr_[var->name_] = var_to_mlir_.at(var->name_);  // raw %argN
 
       for (const auto& j : tensor_type->shape_) {
         if (As<ir::ConstInt>(j)) {
@@ -587,10 +588,17 @@ void PTOCodegen::VisitStmt_(const AssignStmtPtr& op) {
   if (!current_expr_value_.empty()) {
     var_to_mlir_[op->var_->name_] = current_expr_value_;
     // If the rhs is a tensor view (i.e. the assigned variable has TensorType),
-    // propagate tensor_to_view_ and tensor_view_to_ptr_ so that later
-    // GetOrCreateTensorView() calls on this lhs variable succeed.
+    // propagate tensor_to_view_ and tensor_to_ptr_ so that later
+    // GetOrCreateTensorView() and GetTensorPtr() calls on this lhs variable succeed.
     if (As<TensorType>(op->var_->GetType())) {
       tensor_to_view_[op->var_->name_] = current_expr_value_;
+      // Propagate raw pointer: find which tensor's view matches current_expr_value_
+      for (const auto& [name, ptr] : tensor_to_ptr_) {
+        if (tensor_to_view_.count(name) && tensor_to_view_[name] == current_expr_value_) {
+          tensor_to_ptr_[op->var_->name_] = ptr;
+          break;
+        }
+      }
     }
     current_expr_value_ = "";
   }
@@ -696,6 +704,13 @@ std::string PTOCodegen::GetOrCreateTensorView(const VarPtr& tensor_param) {
   auto it = tensor_to_view_.find(tensor_param->name_);
   INTERNAL_CHECK(it != tensor_to_view_.end())
       << "Tensor view not found for parameter: " << tensor_param->name_;
+  return it->second;
+}
+
+std::string PTOCodegen::GetTensorPtr(const VarPtr& tensor_param) {
+  auto it = tensor_to_ptr_.find(tensor_param->name_);
+  INTERNAL_CHECK(it != tensor_to_ptr_.end())
+      << "Tensor pointer not found for parameter: " << tensor_param->name_;
   return it->second;
 }
 

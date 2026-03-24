@@ -30,6 +30,7 @@ def load(
     offsets: Sequence[int | Expr] | _ir_core.MakeTuple,
     valid_shapes: Sequence[int | Expr] | _ir_core.MakeTuple | None = None,
     span: Span | None = None,
+    layout: str | None = None,
 ) -> Call:
     """Build manual.load IR call. shapes is optional; empty MakeTuple skips set_validshape.
 
@@ -39,6 +40,7 @@ def load(
         offsets: Offsets tuple or sequence.
         valid_shapes: Optional shapes tuple or sequence; omitted → empty MakeTuple.
         span: Optional source span.
+        layout: Tensor memory layout, "ND" (row-major) or "DN" (column-major).
 
     Returns:
         Call expression for manual.load.
@@ -48,8 +50,11 @@ def load(
     valid_shapes_tuple = (
         _ir_core.MakeTuple([], actual_span) if valid_shapes is None else _to_make_tuple(valid_shapes, actual_span)
     )
+    kwargs: dict = {}
+    if layout is not None:
+        kwargs["layout"] = layout
     return _ir_core.create_op_call(
-        "manual.load", [tensor, offsets_tuple, valid_shapes_tuple, out], {}, actual_span
+        "manual.load", [tensor, offsets_tuple, valid_shapes_tuple, out], kwargs, actual_span
     )
 
 

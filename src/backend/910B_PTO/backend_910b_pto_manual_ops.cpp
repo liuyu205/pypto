@@ -237,19 +237,65 @@ static std::string MakeManualLoadCodegenPTO(const CallPtr& op, codegen::CodegenB
   auto tile_type = As<ir::TileType>(out_tile->GetType());
   INTERNAL_CHECK(tile_type) << "manual.load: fourth argument (out) must be a Tile";
 
-  auto row_off = codegen.GetExprAsCode(offsets_tuple->elements_[0]);
-  auto col_off = codegen.GetExprAsCode(offsets_tuple->elements_[1]);
-
   auto tensor_type = As<TensorType>(tensor->GetType());
   INTERNAL_CHECK(tensor_type) << "manual.load: tensor argument must have TensorType";
 
-  std::string tensor_view = codegen.GetOrCreateTensorView(tensor);
   std::string dtype_str   = codegen.GetTypeString(tensor_type->dtype_);
   std::string tile_buf    = codegen.GetVarName(out_tile);
-
-  std::string tensor_view_type = codegen.GetTensorViewTypeString(tensor_type.get());
-  // Derive tile_buf type from the out_tile's TileType memref (may be empty before alloc pass).
   std::string tile_buf_type = codegen.GetTileBufTypeStringFromTileType(tile_type);
+
+  // Check for DN (column-major) layout
+  bool is_dn = op->HasKwarg("layout") && op->GetKwarg<std::string>("layout") == "dn";
+
+  std::string view_for_partition;
+  std::string tensor_view_type;
+  std::string row_off, col_off;
+
+  if (is_dn) {
+    // DN layout: emit a transposed make_tensor_view from the raw pointer.
+    // Original tensor shape: [dim0, dim1], strides: [dim1, 1] (row-major)
+    // DN view: shape = [dim1, dim0], strides = [1, dim1] (column-major)
+    // This tells TLOAD to read column-major, achieving on-chip transpose.
+    std::string raw_ptr = codegen.GetTensorPtr(tensor);
+
+    // Get original tensor dimensions
+    INTERNAL_CHECK(tensor_type->shape_.size() == 2)
+        << "manual.load DN layout: tensor must be 2D";
+    std::string orig_dim0, orig_dim1;
+    if (auto var0 = As<ir::Var>(tensor_type->shape_[0])) {
+      orig_dim0 = codegen.GetVarName(var0);
+    } else {
+      orig_dim0 = codegen.GetIndexConstant(codegen.GetConstIntValue(tensor_type->shape_[0]));
+    }
+    if (auto var1 = As<ir::Var>(tensor_type->shape_[1])) {
+      orig_dim1 = codegen.GetVarName(var1);
+    } else {
+      orig_dim1 = codegen.GetIndexConstant(codegen.GetConstIntValue(tensor_type->shape_[1]));
+    }
+
+    // Emit transposed tensor_view: shape=[dim1, dim0], strides=[1, dim1], layout=DN
+    std::string dn_view = codegen.NewTemp();
+    std::string c1 = codegen.GetIndexConstant(1);
+    tensor_view_type = "!pto.tensor_view<?x?x" + dtype_str + ">";
+    std::ostringstream tv_line;
+    tv_line << dn_view << " = pto.make_tensor_view " << raw_ptr
+            << ", shape = [" << orig_dim1 << ", " << orig_dim0 << "],"
+            << " strides = [" << c1 << ", " << orig_dim1 << "]"
+            << " {layout = #pto.layout<dn>}"
+            << " : " << tensor_view_type;
+    codegen.Emit(tv_line.str());
+    view_for_partition = dn_view;
+
+    // Swap offsets: user's [dim0_off, dim1_off] → [dim1_off, dim0_off]
+    col_off = codegen.GetExprAsCode(offsets_tuple->elements_[0]);
+    row_off = codegen.GetExprAsCode(offsets_tuple->elements_[1]);
+  } else {
+    // Standard ND path
+    view_for_partition = codegen.GetOrCreateTensorView(tensor);
+    tensor_view_type = codegen.GetTensorViewTypeString(tensor_type.get());
+    row_off = codegen.GetExprAsCode(offsets_tuple->elements_[0]);
+    col_off = codegen.GetExprAsCode(offsets_tuple->elements_[1]);
+  }
 
   std::string partition_view = codegen.NewTemp();
   std::string partition_type;
@@ -262,7 +308,7 @@ static std::string MakeManualLoadCodegenPTO(const CallPtr& op, codegen::CodegenB
 
     // Emit partition_view.
     partition_type = "!pto.partition_tensor_view<?x?x" + dtype_str + ">";
-    pv_line << partition_view << " = pto.partition_view " << tensor_view
+    pv_line << partition_view << " = pto.partition_view " << view_for_partition
             << ", offsets = [" << row_off << ", " << col_off << "]"
             << ", sizes = ["   << cur_row  << ", " << cur_col << "]"
             << " : " << tensor_view_type << " -> " << partition_type;
@@ -281,7 +327,7 @@ static std::string MakeManualLoadCodegenPTO(const CallPtr& op, codegen::CodegenB
     // Emit partition_view.
     partition_type = "!pto.partition_tensor_view<" + std::to_string(cur_row) + "x" +
                                  std::to_string(cur_col) + "x" + dtype_str + ">";
-    pv_line << partition_view << " = pto.partition_view " << tensor_view
+    pv_line << partition_view << " = pto.partition_view " << view_for_partition
           << ", offsets = [" << row_off << ", " << col_off << "]"
           << ", sizes = ["   << codegen.GetIndexConstant(cur_row)  << ", "
           << codegen.GetIndexConstant(cur_col) << "]"

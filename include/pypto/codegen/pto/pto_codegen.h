@@ -173,6 +173,17 @@ class PTOCodegen : public CodegenBase {
   /** @brief Register IR var name → MLIR view name in both var_to_mlir_ and tensor_to_view_. */
   void SetTensorViewName(const std::string& ir_name, const std::string& mlir_name);
 
+  /**
+   * @brief Get raw pointer (%argN) for a tensor variable
+   *
+   * Used by DN layout codegen to emit a transposed make_tensor_view
+   * from the original pointer rather than the existing tensor_view.
+   *
+   * @param tensor Tensor variable
+   * @return Raw pointer SSA name (e.g., "%arg1")
+   */
+  std::string GetTensorPtr(const ir::VarPtr& tensor);
+
  protected:
   // Override visitor methods for code generation - Statements
   void VisitStmt_(const ir::AssignStmtPtr& op) override;
@@ -278,6 +289,7 @@ class PTOCodegen : public CodegenBase {
   // Variable mappings
   std::map<std::string, std::string> var_to_mlir_;
   std::map<std::string, std::string> tensor_to_view_;
+  std::map<std::string, std::string> tensor_to_ptr_;  ///< Maps tensor var name → raw %argN pointer
   std::map<const ir::MemRef*, std::string> memref_to_mlir_;
   std::map<std::string, const ir::MemRef*> var_to_memref_;
   std::map<const ir::MemRef*, std::shared_ptr<const ir::TileType>> memref_to_tile_type_;
