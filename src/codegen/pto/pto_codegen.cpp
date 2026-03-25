@@ -589,6 +589,32 @@ void PTOCodegen::VisitStmt_(const AssignStmtPtr& op) {
     tuple_var_to_make_tuple_[op->var_->name_] = make_tuple;
     return;
   }
+  // TupleGetItemExpr that resolves to a nested MakeTuple (e.g. from inlined function
+  // returning tuple-of-tuples): propagate the inner MakeTuple to the new var name.
+  if (auto tgi = As<ir::TupleGetItemExpr>(op->value_)) {
+    if (auto tuple_var = As<ir::Var>(tgi->tuple_)) {
+      auto it = tuple_var_to_make_tuple_.find(tuple_var->name_);
+      if (it != tuple_var_to_make_tuple_.end()) {
+        const auto& elems = it->second->elements_;
+        if (tgi->index_ >= 0 && tgi->index_ < static_cast<int>(elems.size())) {
+          auto elem = elems[tgi->index_];
+          // Element is a Var pointing to another MakeTuple — propagate registration
+          if (auto elem_var = As<ir::Var>(elem)) {
+            auto inner_it = tuple_var_to_make_tuple_.find(elem_var->name_);
+            if (inner_it != tuple_var_to_make_tuple_.end()) {
+              tuple_var_to_make_tuple_[op->var_->name_] = inner_it->second;
+              return;
+            }
+          }
+          // Element is a MakeTuple directly
+          if (auto inner_mt = As<ir::MakeTuple>(elem)) {
+            tuple_var_to_make_tuple_[op->var_->name_] = inner_mt;
+            return;
+          }
+        }
+      }
+    }
+  }
   VisitExpr(op->value_);
   // mapping arith var name to mlir mapping
   if (!current_expr_value_.empty()) {
