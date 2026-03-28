@@ -46,6 +46,21 @@ class CodeEmitter {
   void DecreaseIndent();
 
   /**
+   * @brief Emit raw text without indentation (already formatted)
+   */
+  void EmitRaw(const std::string& text);
+
+  /**
+   * @brief Get current indentation level
+   */
+  int GetIndentLevel() const { return indent_level_; }
+
+  /**
+   * @brief Set indentation level (used for save/restore around buffer manipulation)
+   */
+  void SetIndentLevel(int level) { indent_level_ = level; }
+
+  /**
    * @brief Get the currently accumulated code
    *
    * @return The generated code as a string

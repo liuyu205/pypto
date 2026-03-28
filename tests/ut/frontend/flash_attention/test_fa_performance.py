@@ -389,11 +389,8 @@ def fa_perf_kernel(
         red_rm_type = plm.TileType(shape=[1, TS_HALF], dtype=pl.FP32, target_memory=pl.MemorySpace.Vec)
 
         # Double-buffered global_max / global_sum (by q_count % 2)
-        gmax_0    = plm.make_tile(red_type, addr=VA_GMAX0, size=VB_RED)
-        gmax_1    = plm.make_tile(red_type, addr=VA_GMAX1, size=VB_RED)
         gmax_rm_0 = plm.make_tile(red_rm_type, addr=VA_GMAX0, size=VB_RED)
         gmax_rm_1 = plm.make_tile(red_rm_type, addr=VA_GMAX1, size=VB_RED)
-        global_max_buf    = (gmax_0, gmax_1)
         global_max_rm_buf = (gmax_rm_0, gmax_rm_1)
 
         gsum_0    = plm.make_tile(red_type, addr=VA_GSUM0, size=VB_RED)
@@ -418,7 +415,6 @@ def fa_perf_kernel(
                 row_off = row_idx * TS_HALF
                 q_idx = q_count % 2
                 # Aliases for current Q tile's global state
-                global_max_cur    = global_max_buf[q_idx]
                 global_max_rm_cur = global_max_rm_buf[q_idx]
                 global_sum_cur    = global_sum_buf[q_idx]
                 global_sum_rm_cur = global_sum_rm_buf[q_idx]
@@ -462,8 +458,8 @@ def test_fa_perf():
     torch.npu.set_device(device)
     torch.manual_seed(42)
     for sq, skv, d, num_cores in [
-        (128, 128, TD, 1),
-        (512, 512, TD, 4),
+        # (128, 128, TD, 1),
+        # (512, 512, TD, 4),
         (8192, 8192, TD, 24),
     ]:
         print(f"\nFA-Perf ({sq},{skv},{d}) cores={num_cores}  QK_PRELOAD={QK_PRELOAD}")

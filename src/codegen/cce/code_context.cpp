@@ -33,9 +33,9 @@ void CodeContext::RegisterVar(const ir::VarPtr& var, const std::string& cpp_name
   CHECK(var != nullptr) << "Cannot register null variable";
   CHECK(!cpp_name.empty()) << "Cannot register variable with empty name";
 
-  // Check if this name is already registered
+  // Check if this name is already registered (suppress for array access optimizations)
   auto it = name_to_cpp_.find(var->name_);
-  if (it != name_to_cpp_.end()) {
+  if (it != name_to_cpp_.end() && it->second != cpp_name && cpp_name.find('[') == std::string::npos) {
     LOG_WARN << "Variable " << var->name_ << " re-registered with different C++ name: " << cpp_name << " vs "
              << it->second;
   }

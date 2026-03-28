@@ -36,6 +36,8 @@ void CodeEmitter::DecreaseIndent() {
 
 std::string CodeEmitter::GetCode() const { return buffer_.str(); }
 
+void CodeEmitter::EmitRaw(const std::string& text) { buffer_ << text; }
+
 void CodeEmitter::Clear() {
   buffer_.str("");
   buffer_.clear();

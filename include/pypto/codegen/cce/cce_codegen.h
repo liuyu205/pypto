@@ -235,7 +235,7 @@ class CCECodegen : public CodegenBase {
    * @param stmt The statement to scan (typically func->body_)
    * @return Map from tensor VarPtr to access window shape expressions
    */
-  std::map<ir::VarPtr, std::vector<ir::ExprPtr>> CollectTensorAccessShapes(const ir::StmtPtr& stmt);
+  std::map<std::string, std::vector<ir::ExprPtr>> CollectTensorAccessShapes(const ir::StmtPtr& stmt);
 
   /**
    * @brief Extract shape dimensions from shape expressions
@@ -340,8 +340,19 @@ class CCECodegen : public CodegenBase {
   const backend::Backend* backend_;  ///< CCE backend instance (for op info, core type, orchestration)
   bool single_file_mode_ = false;    ///< Whether generating in single-file MIX mode
   bool force_dn_layout_ = false;     ///< Temporary flag for DN layout in GenerateGlobalTensorTypeDeclaration
-  std::set<ir::VarPtr> dn_tensors_;  ///< Tensors loaded with layout="dn" (need Layout::DN)
+  std::set<std::string> dn_tensors_;  ///< Tensor names loaded with layout="dn" (need Layout::DN)
   std::map<std::string, std::string> tile_addresses_;  ///< tile_name → TASSIGN address expression
+
+  // Loop tile hoisting: declarations collected during loop body visit, emitted before outermost loop
+  int loop_depth_ = 0;                        ///< Current for-loop nesting depth (0 = not in loop)
+  std::vector<std::string> loop_hoisted_decls_;  ///< Lines to hoist before outermost loop
+
+  // EventId array deduplication: maps (val0, val1) → EventId variable name
+  std::map<std::pair<int64_t, int64_t>, std::string> event_id_decls_;
+
+  // Tile array deduplication: maps "tile0,tile1" → shared Tile array name
+  std::map<std::string, std::string> tile_array_decls_;
+  int tile_array_counter_ = 0;  ///< Counter for unique Tile array names
 };
 
 }  // namespace codegen

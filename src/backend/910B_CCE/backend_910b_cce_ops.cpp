@@ -870,14 +870,9 @@ static std::string MakeCrossCoreSetCodegenCCE(const ir::CallPtr& op, codegen::Co
   auto pipe = op->GetKwarg<int>("pipe");
   std::string pipe_str = PipeTypeToCCEString(static_cast<ir::PipeType>(pipe));
   if (is_dynamic) {
-    // Dynamic event_id: emit if-chain of static ffts_cross_core_sync calls.
-    int max_eid = op->GetKwarg<int>("max_event_id");
+    // Dynamic event_id: pass runtime value directly to getFFTSMsg.
     std::string event_id = codegen.GetExprAsCode(op->args_[0]);
-    for (int i = 0; i <= max_eid; ++i) {
-      codegen.Emit("if (" + event_id + " == " + std::to_string(i) +
-                    ") ffts_cross_core_sync(" + pipe_str + ", getFFTSMsg(FFTS_MODE_VAL, " +
-                    std::to_string(i) + "));");
-    }
+    codegen.Emit("ffts_cross_core_sync(" + pipe_str + ", getFFTSMsg(FFTS_MODE_VAL, " + event_id + "));");
   } else {
     int event_id = op->GetKwarg<int>("event_id");
     codegen.Emit("ffts_cross_core_sync(" + pipe_str + ", getFFTSMsg(FFTS_MODE_VAL, " +
@@ -890,14 +885,9 @@ static std::string MakeCrossCoreWaitCodegenCCE(const ir::CallPtr& op, codegen::C
                                                 bool is_dynamic) {
   auto& codegen = dynamic_cast<codegen::CCECodegen&>(codegen_base);
   if (is_dynamic) {
-    // Dynamic event_id: emit if-chain of static wait_flag_dev calls.
-    // wait_flag_dev requires compile-time constant event_id.
-    int max_eid = op->GetKwarg<int>("max_event_id");
+    // Dynamic event_id: pass runtime value directly to wait_flag_dev.
     std::string event_id = codegen.GetExprAsCode(op->args_[0]);
-    for (int i = 0; i <= max_eid; ++i) {
-      codegen.Emit("if (" + event_id + " == " + std::to_string(i) + ") wait_flag_dev(" +
-                    std::to_string(i) + ");");
-    }
+    codegen.Emit("wait_flag_dev(" + event_id + ");");
   } else {
     int event_id = op->GetKwarg<int>("event_id");
     codegen.Emit("wait_flag_dev(" + std::to_string(event_id) + ");");
@@ -940,7 +930,12 @@ static std::string MakeSyncSrcDynCodegenCCE(const ir::CallPtr& op, codegen::Code
   std::string event_id = codegen.GetExprAsCode(op->args_[0]);
   std::string set_pipe_str = PipeTypeToCCEString(set_pipe);
   std::string wait_pipe_str = PipeTypeToCCEString(wait_pipe);
-  codegen.Emit("set_flag(" + set_pipe_str + ", " + wait_pipe_str + ", (event_t)" + event_id + ");");
+  // EventId array access (contains '[') already returns event_t — no cast needed
+  if (event_id.find('[') != std::string::npos) {
+    codegen.Emit("set_flag(" + set_pipe_str + ", " + wait_pipe_str + ", " + event_id + ");");
+  } else {
+    codegen.Emit("set_flag(" + set_pipe_str + ", " + wait_pipe_str + ", (event_t)" + event_id + ");");
+  }
   return "";
 }
 
@@ -957,7 +952,12 @@ static std::string MakeSyncDstDynCodegenCCE(const ir::CallPtr& op, codegen::Code
   std::string event_id = codegen.GetExprAsCode(op->args_[0]);
   std::string set_pipe_str = PipeTypeToCCEString(set_pipe);
   std::string wait_pipe_str = PipeTypeToCCEString(wait_pipe);
-  codegen.Emit("wait_flag(" + set_pipe_str + ", " + wait_pipe_str + ", (event_t)" + event_id + ");");
+  // EventId array access (contains '[') already returns event_t — no cast needed
+  if (event_id.find('[') != std::string::npos) {
+    codegen.Emit("wait_flag(" + set_pipe_str + ", " + wait_pipe_str + ", " + event_id + ");");
+  } else {
+    codegen.Emit("wait_flag(" + set_pipe_str + ", " + wait_pipe_str + ", (event_t)" + event_id + ");");
+  }
   return "";
 }
 
