@@ -1310,10 +1310,8 @@ void CCECodegen::VisitStmt_(const ir::IfStmtPtr& op) {
         std::string tile_type_str = type_converter_.ConvertTileType(tile_type, rows, cols);
         if (loop_depth_ > 0) {
           loop_hoisted_decls_.push_back("using " + type_alias_name + " = " + tile_type_str + ";");
-          loop_hoisted_decls_.push_back(type_alias_name + " " + return_var_name + "(" + ctor_args + ");");
         } else {
           emitter_.EmitLine("using " + type_alias_name + " = " + tile_type_str + ";");
-          emitter_.EmitLine(type_alias_name + " " + return_var_name + "(" + ctor_args + ");");
         }
       } else if (auto tensor_type = std::dynamic_pointer_cast<const ir::TensorType>(return_var->GetType())) {
         GenerateGlobalTensorTypeDeclaration(return_var_name, tensor_type);
